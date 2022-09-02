@@ -6,7 +6,7 @@ import os
 import posixpath
 import sys
 from copy import deepcopy
-from typing import cast
+from typing import MutableMapping, Tuple, List
 from urllib.parse import unquote
 
 import hypercorn
@@ -50,47 +50,9 @@ class BaseCGIHandler:
     async def run_cgi(self):
         raise NotImplementedError
 
-    def translate_path(self, path):
-        """Translate a /-separated PATH to the local filename syntax.
-
-        Components that mean special things to the local file system
-        (e.g. drive or directory names) are ignored.  (XXX They should
-        probably be diagnosed.)
-
-        """
-        # abandon query parameters
-        path = path.split("?", 1)[0]
-        path = path.split("#", 1)[0]
-        # Don't forget explicit trailing slash when normalizing. Issue17324
-        trailing_slash = path.rstrip().endswith("/")
-        try:
-            path = unquote(path, errors="surrogatepass")
-        except UnicodeDecodeError:
-            path = unquote(path)
-        path = posixpath.normpath(path)
-        words = path.split("/")
-        words = filter(None, words)
-        path = self.directory
-        for word in words:
-            if os.path.dirname(word) or word in (os.curdir, os.pardir):
-                # Ignore components that are not a simple file/directory name
-                continue
-            path = os.path.join(path, word)
-        if trailing_slash:
-            path += "/"
-        return path
-
-
-class HTTPCGIHandler(BaseCGIHandler):
-    async def run_cgi(self):
-        if self.scope["type"] != "http":
-            return
-        body = None
-        if self.request.method == "POST":
-            body = await self.request.body()
-
+    def prepare_env(self) -> Tuple[MutableMapping, List[str]]:
         env = deepcopy(os.environ)
-        cmdline = []
+        cmdline:List[str] = []
         env["SERVER_SOFTWARE"] = SERVER_SOFTWARE
         if "server" in self.scope:
             env["SERVER_NAME"] = self.scope["server"][0]
@@ -132,7 +94,49 @@ class HTTPCGIHandler(BaseCGIHandler):
         for k in ('QUERY_STRING', 'REMOTE_HOST', 'CONTENT_LENGTH',
                   'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_REFERER'):
             env.setdefault(k, "")
+        return env, cmdline
 
+    def translate_path(self, path):
+        """Translate a /-separated PATH to the local filename syntax.
+
+        Components that mean special things to the local file system
+        (e.g. drive or directory names) are ignored.  (XXX They should
+        probably be diagnosed.)
+
+        """
+        # abandon query parameters
+        path = path.split("?", 1)[0]
+        path = path.split("#", 1)[0]
+        # Don't forget explicit trailing slash when normalizing. Issue17324
+        trailing_slash = path.rstrip().endswith("/")
+        try:
+            path = unquote(path, errors="surrogatepass")
+        except UnicodeDecodeError:
+            path = unquote(path)
+        path = posixpath.normpath(path)
+        words = path.split("/")
+        words = filter(None, words)
+        path = self.directory
+        for word in words:
+            if os.path.dirname(word) or word in (os.curdir, os.pardir):
+                # Ignore components that are not a simple file/directory name
+                continue
+            path = os.path.join(path, word)
+        if trailing_slash:
+            path += "/"
+        return path
+
+
+class HTTPCGIHandler(BaseCGIHandler):
+    async def run_cgi(self):
+        if self.scope["type"] != "http":
+            return
+        body = None
+        if self.request.method == "POST":
+            body = await self.request.body()
+
+        env, cmdline = self.prepare_env()
+        path = self.scope["path"]
         script_file = self.translate_path(path)
         if not os.path.exists(script_file):
             await self.return_error(
@@ -187,51 +191,10 @@ class WebsocketCGIHandler(BaseCGIHandler):
     async def run_cgi(self):
         if self.scope["type"] != "websocket":
             return
-        env = deepcopy(os.environ)
-        cmdline = []
-        env["SERVER_SOFTWARE"] = SERVER_SOFTWARE
-        if "server" in self.scope:
-            env["SERVER_NAME"] = self.scope["server"][0]
-            env["SERVER_PORT"] = str(self.scope["server"][1])
-        env["GATEWAY_INTERFACE"] = "CGI/1.1"
-        env["SERVER_PROTOCOL"] = "HTTP/" + self.scope["http_version"]
-        env["REQUEST_METHOD"] = self.request.method
-        path: str = self.scope["path"]
-        env["PATH_INFO"] = path.rpartition("/")[0]
-        env["PATH_TRANSLATED"] = self.translate_path(path.rpartition("/")[0])
-        env["SCRIPT_NAME"] = path
-        if query := self.scope["query_string"]:
-            env["QUERY_STRING"] = query.decode()
-            if b"=" not in query:
-                cmdline.append(query.decode())
-        env["REMOTE_ADDR"] = self.request.client.host
-        authorization = self.request.headers.get("authorization")
-        if authorization:
-            authorization = authorization.split()
-            if len(authorization) == 2:
-
-                env["AUTH_TYPE"] = authorization[0]
-                if authorization[0].lower() == "basic":
-                    try:
-                        authorization = authorization[1].encode("ascii")
-                        authorization = base64.decodebytes(authorization).decode(
-                            "ascii"
-                        )
-                    except (binascii.Error, UnicodeError):
-                        pass
-                    else:
-                        authorization = authorization.split(":")
-                        if len(authorization) == 2:
-                            env["REMOTE_USER"] = authorization[0]
-
-        for k, v in self.request.headers.items():
-            env[f"HTTP_{k.replace('-', '_').upper()}"] = v
-        for k in ('QUERY_STRING', 'REMOTE_HOST', 'CONTENT_LENGTH',
-                  'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_REFERER'):
-            env.setdefault(k, "")
-
+        env, cmdline = self.prepare_env()
+        path = self.scope["path"]
         script_file = self.translate_path(path)
-        if not os.path.exists(script_file):
+        if not os.path.exists(script_file) or not os.path.isfile(script_file):
             await self.send({"type": "websocket.close"})
             return
 
