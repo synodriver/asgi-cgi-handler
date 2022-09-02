@@ -1,23 +1,23 @@
 import asyncio
 import base64
 import binascii
-import http.server
 import os
 import posixpath
 import sys
 from copy import deepcopy
-from typing import MutableMapping, Tuple, List
+from typing import List, MutableMapping, Tuple
 from urllib.parse import unquote
 
 import hypercorn
 from starlette.concurrency import run_in_threadpool, run_until_first_complete
-from starlette.requests import Request
+from starlette.requests import HTTPConnection, Request
+from starlette.websockets import WebSocket
 
 from asgi_cgi.typing import ErrHandler, Receive, Send
 from asgi_cgi.utils import parse_header_and_body
 from asgi_cgi.version import __version__
 
-SERVER_SOFTWARE = f"asgi_cgi/{__version__}"
+SERVER_SOFTWARE = f"asgi-cgi/{__version__}"
 
 
 async def _base_err_handler(stderr: bytes):
@@ -37,14 +37,17 @@ class BaseCGIHandler:
         self.scope: dict
         self.receive: Receive
         self.send: Send
-        self.request: Request
+        self.request: HTTPConnection
         self.closed = False
 
     async def __call__(self, scope: dict, receive: Receive, send: Send):
         self.scope = scope
         self.receive = receive  # type
         self.send = send
-        self.request = Request(scope, receive, send)
+        if scope["type"] == "http":
+            self.request = Request(scope, receive, send)  # todo add starlette websocket
+        elif scope["type"] == "websocket":
+            self.request = WebSocket(scope, receive, send)
         await self.run_cgi()
 
     async def run_cgi(self):
@@ -52,14 +55,14 @@ class BaseCGIHandler:
 
     def prepare_env(self) -> Tuple[MutableMapping, List[str]]:
         env = deepcopy(os.environ)
-        cmdline:List[str] = []
+        cmdline: List[str] = []
         env["SERVER_SOFTWARE"] = SERVER_SOFTWARE
         if "server" in self.scope:
             env["SERVER_NAME"] = self.scope["server"][0]
             env["SERVER_PORT"] = str(self.scope["server"][1])
         env["GATEWAY_INTERFACE"] = "CGI/1.1"
         env["SERVER_PROTOCOL"] = "HTTP/" + self.scope["http_version"]
-        env["REQUEST_METHOD"] = self.request.method
+        env["REQUEST_METHOD"] = self.scope.get("method", "GET")
         path: str = self.scope["path"]
         env["PATH_INFO"] = path
         env["PATH_TRANSLATED"] = self.translate_path(path)
@@ -91,8 +94,14 @@ class BaseCGIHandler:
 
         for k, v in self.request.headers.items():
             env[f"HTTP_{k.replace('-', '_').upper()}"] = v
-        for k in ('QUERY_STRING', 'REMOTE_HOST', 'CONTENT_LENGTH',
-                  'HTTP_USER_AGENT', 'HTTP_COOKIE', 'HTTP_REFERER'):
+        for k in (
+            "QUERY_STRING",
+            "REMOTE_HOST",
+            "CONTENT_LENGTH",
+            "HTTP_USER_AGENT",
+            "HTTP_COOKIE",
+            "HTTP_REFERER",
+        ):
             env.setdefault(k, "")
         return env, cmdline
 
@@ -164,7 +173,9 @@ class HTTPCGIHandler(BaseCGIHandler):
                 asyncio.create_task(self.error_handler(stderr))
             else:
                 asyncio.create_task(run_in_threadpool(self.error_handler, stderr))
-        status, response_header, response_body = parse_header_and_body(b"HTTP/1.1 200 OK\r\n"+stdout)
+        status, response_header, response_body = parse_header_and_body(
+            b"HTTP/1.1 200 OK\r\n" + stdout
+        )
         await self.send(
             {
                 "type": "http.response.start",

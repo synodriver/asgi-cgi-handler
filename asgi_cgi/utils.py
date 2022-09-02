@@ -8,7 +8,7 @@ def parse_header_and_body(
     raw_body: bytes,
 ) -> Tuple[int, Sequence[Tuple[bytes, bytes]], bytes]:
     """
-
+    parse data into status code, header and body
     :param raw_body: header and body
     :return:
     """
@@ -28,7 +28,7 @@ def parse_header_and_body(
             break
     if not all((status, headers, body)):
         raise ValueError("invalid cgi response")
-    return status, headers, body
+    return status, headers, body  # type: ignore
 
 
 def is_python(path: str) -> bool:
