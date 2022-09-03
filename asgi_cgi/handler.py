@@ -8,7 +8,6 @@ from copy import deepcopy
 from typing import List, MutableMapping, Tuple
 from urllib.parse import unquote
 
-import hypercorn
 from starlette.concurrency import run_in_threadpool, run_until_first_complete
 from starlette.requests import HTTPConnection, Request
 from starlette.websockets import WebSocket
@@ -205,10 +204,11 @@ class WebsocketCGIHandler(BaseCGIHandler):
         env, cmdline = self.prepare_env()
         path = self.scope["path"]
         script_file = self.translate_path(path)
+        await self.receive()  # wesocket.connect
         if not os.path.exists(script_file) or not os.path.isfile(script_file):
             await self.send({"type": "websocket.close"})
             return
-
+        await self.send({"type": "websocket.accept"})
         process = await asyncio.create_subprocess_exec(
             script_file,
             *cmdline,
@@ -217,13 +217,12 @@ class WebsocketCGIHandler(BaseCGIHandler):
             stderr=asyncio.subprocess.PIPE,
             env=env,
         )
-        await self.send({"type": "websocket.accept"})
         await run_until_first_complete(
             (self.read_process_output, {"process": process}),
             (self.read_client_input, {"process": process}),
-            (self.read_process_error, {"process": process}),
-            (process.wait, {}),
+            # (process.wait, {}),
         )
+        await self.read_process_error(process)  # handle stderr
         if not self.closed:  # script itself exit
             status = process.returncode
             if status:
@@ -245,7 +244,7 @@ class WebsocketCGIHandler(BaseCGIHandler):
 
     async def read_process_error(self, process: asyncio.subprocess.Process):
         assert process.stderr is not None
-        while line := await process.stderr.readline():
+        if line := await process.stderr.read():  # readall
             if asyncio.iscoroutinefunction(self.error_handler):
                 await self.error_handler(line)  # type: ignore
             else:

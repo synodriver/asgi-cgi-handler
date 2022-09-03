@@ -4,3 +4,6 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(env env.c)
 set_target_properties(env PROPERTIES SUFFIX .cgi)
+
+add_executable(ws ws.c)
+set_target_properties(ws PROPERTIES SUFFIX .cgi)
