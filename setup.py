@@ -40,7 +40,7 @@ def main():
         author_email="diguohuangjiajinweijun@gmail.com",
         maintainer="synodriver",
         python_requires=">=3.8",
-        install_requires=["starlette", "h11"],
+        install_requires=["starlette", "h11", "sse-starlette"],
         license="GPLv3",
         classifiers=[
             "Development Status :: 3 - Alpha",

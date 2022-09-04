@@ -21,12 +21,13 @@ uvicorn.run(HTTPCGIHandler())
 - A more complex example
 ```python
 from fastapi import FastAPI
-from asgi_cgi import HTTPCGIHandler, WebsocketCGIHandler
+from asgi_cgi import HTTPCGIHandler, WebsocketCGIHandler, SSECGIHandler
 
 app = FastAPI(title="CGI Server")
 
 app.mount("/cgi-bin", HTTPCGIHandler())  # type: ignore
 app.mount("/ws", WebsocketCGIHandler())  # type: ignore
+app.mount("/sse", SSECGIHandler())  # type: ignore
 ```
 
 As you can see, we have websocket support, which is inspired by
@@ -35,6 +36,7 @@ As you can see, we have websocket support, which is inspired by
 The ```WebsocketCGIHandler``` route requests to endpoint executables and feed websocket data
 into process's stdin and send stdout to client line by line.
 
+The ```SSECGIHandler```, means ```server send event```, is just like the websocket one, but it only send stdout to client.
 
 
 ## Apis
