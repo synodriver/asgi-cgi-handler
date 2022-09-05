@@ -31,7 +31,7 @@ class BaseCGIHandler:
         directory: str = None,
         error_handler: ErrHandler = None,
         timeout: float = 1.0,
-        max_process: int = 10
+        max_process: int = 10,
     ):
         """
 
@@ -296,6 +296,13 @@ class WebsocketCGIHandler(BaseCGIHandler):
             await process.stdin.drain()
 
 
+async def read_process_output(process: asyncio.subprocess.Process):
+    assert process.stdout is not None
+    # stdout = cast(asyncio.StreamReader, process.stdout)
+    while line := await process.stdout.readline():
+        yield ServerSentEvent(data=line.decode())
+
+
 class SSECGIHandler(HTTPCGIHandler):
     """
     Send stdout to client as event source response.
@@ -335,7 +342,7 @@ class SSECGIHandler(HTTPCGIHandler):
             if body:
                 process.stdin.write(body)
                 await process.stdin.drain()
-            await EventSourceResponse(self.read_process_output(process))(
+            await EventSourceResponse(read_process_output(process))(
                 self.scope, self.receive, self.send
             )  # client disconnect is handled by sse-starlette
             stderr = await asyncio.wait_for(process.stderr.read(), self.timeout)
@@ -352,9 +359,3 @@ class SSECGIHandler(HTTPCGIHandler):
         finally:
             if process.returncode is None:
                 process.terminate()
-
-    async def read_process_output(self, process: asyncio.subprocess.Process):
-        assert process.stdout is not None
-        # stdout = cast(asyncio.StreamReader, process.stdout)
-        while line := await process.stdout.readline():
-            yield ServerSentEvent(data=line.decode())
