@@ -50,4 +50,6 @@ class HTTPCGIHandler:
 class WebsocketCGIHandler:
     def __init__(self, directory: str=..., error_handler: ErrHandler=...) -> None: ...
 
+class SSECGIHandler:
+    def __init__(self, directory: str=..., error_handler: ErrHandler=...) -> None: ...
 ```

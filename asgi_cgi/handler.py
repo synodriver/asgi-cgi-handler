@@ -31,16 +31,20 @@ class BaseCGIHandler:
         directory: str = None,
         error_handler: ErrHandler = None,
         timeout: float = 1.0,
+        max_process: int = 10
     ):
         """
 
         :param directory: CGI root.
         :param error_handler: Called when scripts write something to stderr.
-        :param timeout: If client disconnect, wait process for timeout second until it exits. For CGI scripts, they can't run more than timeout second
+        :param timeout: If client disconnect, wait process for timeout second until it exits. For CGI scripts,
+        they can't run more than timeout second.
+        :param max_process: Limit max process count to prevent from dos attack.
         """
         self.directory = directory or os.getcwd()
         self.error_handler = error_handler or _base_err_handler
         self.timeout = timeout
+        self._sem = asyncio.Semaphore(max_process)
         self.scope: dict
         self.receive: Receive
         self.send: Send
@@ -55,7 +59,8 @@ class BaseCGIHandler:
             self.request = Request(scope, receive, send)  # todo add starlette websocket
         elif scope["type"] == "websocket":
             self.request = WebSocket(scope, receive, send)
-        await self.run_cgi()
+        async with self._sem:
+            await self.run_cgi()
 
     async def run_cgi(self):
         raise NotImplementedError
