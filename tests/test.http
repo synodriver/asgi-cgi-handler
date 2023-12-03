@@ -1,0 +1,11 @@
+GET http://127.0.0.1:9000/cgi-bin/env.cgi
+###
+POST http://127.0.0.1:9000/cgi-bin/httppost.cgi
+Content-Type: application/json
+
+{"id": 999, "value": "content"}
+
+###
+WEBSOCKET ws://127.0.0.1:9000/ws/ws.cgi
+
+###

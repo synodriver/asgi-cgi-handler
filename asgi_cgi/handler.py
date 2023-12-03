@@ -287,7 +287,7 @@ class WebsocketCGIHandler(BaseCGIHandler):
         while True:
             data = await self.receive()
             if data["type"] == "websocket.disconnect":
-                self.closed = True
+                # self.closed = True
                 break
             if text := data.get("text"):
                 process.stdin.write(text.encode())

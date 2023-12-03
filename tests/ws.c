@@ -49,7 +49,7 @@ int freadline(FILE *f)
 
 int main(int argc, char **argv)
 {
-    for(int i=0; i<10;i++)
+    for(;;)
     {
         char* line = fgets(buf,READLINE_BUFFSIZE, stdin);
         fwrite(line, sizeof(char), strlen(line)-strlen(SEP), stdout);

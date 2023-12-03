@@ -7,3 +7,7 @@ set_target_properties(env PROPERTIES SUFFIX .cgi)
 
 add_executable(ws ws.c)
 set_target_properties(ws PROPERTIES SUFFIX .cgi)
+
+
+add_executable(httppost httppost.c)
+set_target_properties(httppost PROPERTIES SUFFIX .cgi)
